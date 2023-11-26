@@ -11,8 +11,7 @@ Na arquitetura com ESP Now, aproveitamos a funcionalidade de broadcast, permitin
 
 Ao combinar o broadcast com a arquitetura Publish/Subscribe do MQTT, estabelecemos uma comunicação dinâmica e escalável. Isso possibilita a transmissão eficiente de atualizações ou comandos para toda a rede, sem a necessidade de conhecimento prévio sobre os destinatários. Essa abordagem destaca-se em ambientes distribuídos, reforçando a flexibilidade e eficiência da rede mesh.
 
-Os dispositivos ao receberem alguma mensagem, elas precisam:
-Verificar se o tópico está na lista de tópicos (_topic).
+Os dispositivos, ao receberem alguma mensagem, precisam verificar se o tópico está na lista de tópicos (_topic).
 
     Se o tópico está na lista de tópicos:
         Verificar se é um publisher (is_publisher).
@@ -20,13 +19,23 @@ Verificar se o tópico está na lista de tópicos (_topic).
             Se for False, indica que o dispositivo é um inscrito (Subscriber), e a mensagem com esse tópico deve ser aceita e guardada. A prioridade pode ser dada à mensagem que chega primeiro.
 
     Se o tópico NÃO está na lista de tópicos:
-        Repassar a mensagem para outros dispositivos na rede.
+        verificar se topic está em _topic_last_id
+            topic está em _topic_last_id
+                Verificar data_id em _topic_last_id
+                    ID da mensagem recebida é igual ao ultimo ID da mensagem recebida, do topico - NÃO repassa mensagem
+                    ID da mensagem recebida é diferente do ID da ultima mensagem recebida - repassa mensagem
+            topic NÂO está em _topic_last_id
+                cria topic em _topic_last_id e repassa mensagem
 
-O objetivo principal do projeto é estabelecer uma infraestrutura de comunicação robusta e distribuída, onde os dispositivos conectados podem atuar como nodos, desempenhando o papel de publishers (emissores de mensagens para um tópico específico) e/ou subscribers (recebedores de mensagens de um tópico ao qual estão inscritos).
+O objetivo principal do projeto é estabelecer uma infraestrutura de comunicação distribuída, onde os dispositivos conectados podem atuar como nodos, desempenhando o papel de publishers (emissores de mensagens para um tópico específico) e/ou subscribers (receptores de mensagens de um tópico ao qual estão inscritos).
 
 Etapa 2: Criação do jogo interativo utilizando a rede mesh
 
 # Referências 
+
+https://en.wikipedia.org/wiki/Wireless_mesh_network
+
+https://computer.howstuffworks.com/how-wireless-mesh-networks-work.htm
 
 https://www.espressif.com/en/solutions/low-power-solutions/esp-now
 

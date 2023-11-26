@@ -3,7 +3,8 @@
 #esp.osdebug(None)
 
 
-
+#teste para um nodo subscriber
+#incluido no boot do microcontrolador
 
 from machine import Pin
 def toggle_light():

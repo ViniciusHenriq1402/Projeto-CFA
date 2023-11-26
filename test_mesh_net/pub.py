@@ -2,6 +2,10 @@
 #import esp
 #esp.osdebug(None)
 
+
+#teste para um nodo publisher
+#incluido no boot do microcontrolador
+
 from machine import Pin
 def toggle_light():
     led = Pin(2, Pin.OUT)
@@ -28,7 +32,6 @@ def publisher(): #publisher
         topic = 'button02'
         data = 'not pressed'
         MeshNet.post(topic, data)
-        print('Sent {} {}'.format(topic, data))
         sleep(4)
 
 
