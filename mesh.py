@@ -67,7 +67,7 @@ class MeshNet():
         MeshNet.en.active(True)
         MeshNet.en.add_peer(_BCAST) # add broadcast peer first
         
-        self.on_news = on_news if on_news else self._on_news
+        self.on_news = on_news if on_news else self._empty_callback
         MeshNet.en.irq(self._on_receive)
         
         #caso seja preciso publicar com um certa periodicidade - não usado
@@ -78,7 +78,7 @@ class MeshNet():
         
         
     # callback vazia, para quando callback incluido no contrutor for vazia
-    def _on_news(self, data_id, topic, sender_node_name, payload, received):
+    def _empty_callback(self, data_id, topic, sender_node_name, payload, received):
         return True
    
     #Verifica o peer dado um endereço MAC dado - NÂO USADO
@@ -154,7 +154,7 @@ class MeshNet():
                     self._topic[topic].t_stamp = ticks_ms() # timestamp de quando recebe, para subscribers
                     self._topic[topic].latest_id = data.data_id
                     self._topic[topic].latest_data = data
-                    self._on_news(data.data_id, data.topic, data.sender_node_name, data.payload, data.received ) #callback 
+                    self.on_news(data.data_id, data.topic, data.sender_node_name, data.payload, data.received ) #callback 
             else:
                 #	2) topico NÃO está em _topic
                 if topic in self._topic_last_id:
@@ -183,11 +183,20 @@ class MeshNet():
             ms = MessageSetting()
             ms.is_publisher = False
             cls._topic[topic] = ms
-            print('subscribed to {}'.format(topic))
+            print('Inscrito em {}'.format(topic))
 
         else:
-            print("Topico já inscrito")    
-
+            print("Topico já inscrito")
+            
+    @classmethod
+    def unsubscribe(cls, topic):
+        if topic in cls._topic:
+            del cls._topic[topic]
+            print("Inscrição cancelada em topico {}".format(topic))
+        else:
+            print("Topico nao inscrito")
+            
+    
     # metodo para enviar nova ou uma atualizacao sobre um topico
     # topic: topico da mensagem
     # payload: dados a serem enviados
