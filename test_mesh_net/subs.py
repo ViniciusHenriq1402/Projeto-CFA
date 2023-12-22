@@ -1,39 +1,39 @@
 # This file is executed on every boot (including wake-boot from deepsleep)
 #import esp
 #esp.osdebug(None)
-
-
-#teste para um nodo subscriber
-#incluido no boot do microcontrolador
-
 from machine import Pin
-def toggle_light():
-    led = Pin(2, Pin.OUT)
-    led.value(not led.value())
-    
-import machine; 
-def reset():
-    machine.reset()
-
 from utime import sleep
-
 from mesh import MeshNet
 
-def on_news(self,data_id,topic,sender_node_name,payload, received):
-    print('data_id:{}, topic:{}, sender_node_name{}, payload:{}, received:{}'.format(data_id, topic, sender_node_name,  payload, received))
+def toggle_light():
+    led.value(not led.value())
+
+#Usado para teste da rede mesh, metodos publisher de 1 a 3 e subscriber1,
+
+# ----------------------------
+mesh_net = MeshNet('subscriber1', on_news )
+def subscriber1():
+    mesh_net.subscribe('button01')
+    mesh_net.subscribe('button02')
+    mesh_net.subscribe('button03')
+# ----------------------------
+
+def on_news(self, data_id, topic, publisher_node_name, payload, sender_node_name):
+    print(f'data_id: {data_id}, topic: {topic}, publisher_node_name: {publisher_node_name}, payload: {payload}, sender_node_name: {sender_node_name}')
     return True
-    
-MeshNet('subscriber1', on_news )   
-  
-def subscriber(): #Subscriber, show all published news
 
+#Sinaliza que a rede mesh ja esta configurada
+led = Pin(2, Pin.OUT)
+led.on()
+sleep(0.1)
+led.off()
+sleep(0.1)
+led.on()
+sleep(0.1)
+led.off()
 
-    MeshNet.subscribe('button01')
-    MeshNet.subscribe('button02')
-    MeshNet.subscribe('button03')
+#chame o metodo subscriber1 (subscribers nao precisam de for pois se inscrevem em um topico e aguardam atualizacao sobre este topico
+   
+subscriber1()
 
-
-
-
-
-
+# ----------------------------

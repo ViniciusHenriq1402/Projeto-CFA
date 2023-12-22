@@ -8,45 +8,46 @@ import network
 import espnow
 gc.collect()
 
+
 _CH_SPLIT   = '~' # caracter que separa os campos no empacotamento das mensagens 
 _BCAST      = b'\xff'*6 #broadcast MAC address
-_PUB_FREQ	= 0
 
 # Classe com os dados a serem enviados
 class Data:
-    def __init__(self, topic='', sender_node_name='', payload=bytearray()):
-        self.data_id = 0  # Somente o Publisher pode modificar
+    def __init__(self, topic='', publisher_node_name='', payload=bytearray()):
+        self.data_id = 1  # Somente o Publisher pode modificar
         self.topic = topic  # topico da mensagem
-        self.sender_node_name = sender_node_name # nome do nodo de quem enviou
+        self.publisher_node_name = publisher_node_name # nome do nodo de quem enviou
         self.payload = payload # conteudo da mensagem
-        self.received = False  # True se algum inscrito recebeu essa mensagem
+        self.sender_node_name = ''  # nome do nodo que enviou a mensagem
         
 # Classe contendo dados que serão verificados apos receber uma mensagem
 class MessageSetting():
     def __init__(self):
         self.is_publisher = True #Boolean True se esse nodo é um publisher ou False caso contrario
         self.MAC = _BCAST  # em caso de necessidade de criar um mapa dinamico, MAC de que enviou
-        self.QoS = 0  # Quality of Service ( 0:Fire&Forget, 1:At least once, 2:Exactly once ) - NOT USED
-        self.t_exp = 0  # Tempo de expiramento da mensagem
         self.t_stamp = 0  # timestamp da ultima mensagem recebida que ele esta inscrito
         self.latest_id = 0 # ultimo id da mensagem recebida
         self.latest_data = Data() # ultimo conteudo da mensagem data enviada ou recebida
+        self.is_subscriber = False
 
 
 #classe principal da criacao da rede mesh
 class MeshNet():
     
-    _topic = {} #dicionario topico: MessageSetting, contendo os topicos que este nodo é um publisher ou subscriber 
+    _topics = {} #dicionario topico: MessageSetting, contendo os topicos que este nodo é um publisher ou subscriber 
     _topic_last_id = {} #dicionario topico: ultimo id recebido do topico
-    _node_name = '' #nome do nodo 
+    _node_name = None
     
     #construtor
     # node_name : nome do nodo
     # on_news : callback chamada apos o subscriber recebe a mensagem na qual ele esta inscrito, default : None
-    # pub_t : intervalo de tempo para o envio de mensagem
-    def __init__(self, node_name, on_news = None, pub_t = _PUB_FREQ):
+    # essa callback deve estar composta por 
+    # self.on_news(self, data_object.data_id, data_object.topic, data_object.publisher_node_name, data_object.payload, data_object.sender_node_name ) #callback 
+    # TODO: arrumar essa callback, nao devia precisar de tanto argumento
+    def __init__(self, node_name, on_news=None):
         
-        self._node_name = node_name # node_name name
+        MeshNet._node_name = node_name # node_name name
         
         #  A WLAN interface must be active for send()/recv()
         print('WiFi STA_IF started')
@@ -60,27 +61,23 @@ class MeshNet():
         ap.config(essid=node_name, password='esp32')
         webrepl.start()
         
-       # MeshNet._nodes={node_name:bytearray(local)} # create list of MAC-address & _nodes
+    # MeshNet._nodes={node_name:bytearray(local)} # create list of MAC-address & _nodes
 
         print('ESPNow node {} started'.format(node_name))
         MeshNet.en = espnow.ESPNow()
         MeshNet.en.active(True)
         MeshNet.en.add_peer(_BCAST) # add broadcast peer first
         
-        self.on_news = on_news if on_news else self._on_news
+        self.on_news = on_news if on_news else self._empty_callback
         MeshNet.en.irq(self._on_receive)
-        
-        #caso seja preciso publicar com um certa periodicidade - não usado
-#         _pubsT = Timer(4) # pulse Pubs
-#         _pubsT.init(period=pub_t, mode=Timer.PERIODIC, callback=self._pubs_post) 
         
         print('Mesh network started')
         
         
     # callback vazia, para quando callback incluido no contrutor for vazia
-    def _on_news(self, data_id, topic, sender_node_name, payload, received):
+    def _empty_callback(self, data_id, topic, publisher_node_name, payload, sender_node_name):
         return True
-   
+
     #Verifica o peer dado um endereço MAC dado - NÂO USADO
     @staticmethod
     def _check_peer(MAC):
@@ -100,7 +97,7 @@ class MeshNet():
     # data: Objeto da classe Data, da mensagem a ser enviada
     @staticmethod
     def _pack_msg(data):
-        return '{}~{}~{}~{}~{}'.format(data.data_id, data.topic, data.sender_node_name, data.payload, data.received)
+        return '{}~{}~{}~{}~{}'.format(data.data_id, data.topic, data.publisher_node_name, data.payload, data.sender_node_name)
 
 
     # Desempacotamento dos dados recebidos, colocando-os no objeto Data
@@ -109,110 +106,181 @@ class MeshNet():
     def _unpack_msg(msg):
 
         data = Data()
-        data.data_id = msg[0]
+        data.data_id = int(msg[0])
         data.topic = msg[1]
-        data.sender_node_name = msg[2]
+        data.publisher_node_name = msg[2]
         data.payload = msg[3]
-        data.received = msg[4]
+        data.sender_node_name = msg[4]
 
         return data
-      
+    
             
-   # callback principal de quando este nodo recebe uma mensagem, usado no metodo do ESPNOW irq()
-    def _on_receive(self,en):
-        for MAC, data in en: # lista com endereço MAC e dados da mensagem recebida
-            
-            u_data = data.decode('utf-8') # recebe dados em bytes e devem ser decodificado 
-            data = self._unpack_msg(u_data.split(_CH_SPLIT)) # desempacotamento em objeto da classe Data()
-            topic = data.topic
+# callback principal de quando este nodo recebe uma mensagem, usado no metodo do ESPNOW irq()
+    def _on_receive(self, en):
+
+        while True:  # Read out all messages waiting in the buffer
+            mac, msg = en.irecv(0)  # Don't wait if no messages left
+            if mac is None: return
+            u_data = msg.decode('utf-8') # recebe dados em bytes e devem ser decodificado 
+            data_object = MeshNet._unpack_msg(u_data.split(_CH_SPLIT)) # desempacotamento em objeto da classe Data()
+            topic = data_object.topic
+            #print(f'publisher:{data_object.publisher_node_name} - sender:{data_object.sender_node_name}')
             
             #Verificação feita na callback principal       
-            #Verificar se topic(da mensagem recebida) esta em _topic
-            #    1) topic está em _topic 
-            #		verificar data.is_publisher 
-            #			A) se True entao ele é quem emitiu - Publisher - qualquer mensagem recebida com esse topico deve ser descartado, ignorado
-            #           B) se False então ele é quem está inscrito - Subscriber - qualquer mensagem recebida com esse topico dever ser aceita, guardada
-            #    2) topic NÃO está em _topic
-            #			verificar se topic está em _topic_last_id
-            #				2.1) topic está em _topic_last_id
-            #					Verificar data_id em _topic_last_id
-            #						A)ID da mensagem recebida é igual ao ultimo ID da mensagem recebida, do topico - NÃO repassa mensagem
-            #						B)ID da mensagem recebida é diferente do ID da ultima mensagem recebida - repassa mensagem
-            #				2.2) topic NÂO está em _topic_last_id
-            #                   cria topic em _topic_last_id e repassa mensagem
-            
-            
-            if topic in self._topic: # the node_name is alive!
-                #	1) topic está em _topic
-                if self._topic[topic].is_publisher:
-                    #	A) Publisher - qualquer mensagem recebida com esse topico deve ser descartado, ignorado
-                    #vazia por enquanto,
-                    #talvez acrescentar algum forma de avisar, o publisher, se a mensagem foi recebida por algum subscriber, variavel received de Data. 
-                    pass
-                else:
-                    #	B) Subscriber - qualquer mensagem recebida com esse topico dever ser aceita, guardada
-                    self._topic[topic].t_stamp = ticks_ms() # timestamp de quando recebe, para subscribers
-                    self._topic[topic].latest_id = data.data_id
-                    self._topic[topic].latest_data = data
-                    self._on_news(data.data_id, data.topic, data.sender_node_name, data.payload, data.received ) #callback 
-            else:
-                #	2) topico NÃO está em _topic
-                if topic in self._topic_last_id:
-                    #2.1)
-                    if data.data_id == self._topic_last_id[topic]:
-                        #A)
-                        #vazia
-                        #se for preciso limitar a quantidade de repasse
-                        pass
+            #1) Verificar se topic(da mensagem recebida) esta em _topics
+            #   A) topic está em _topics 
+            #        1.1) verificar data_object.is_publisher 
+            #            A) Este nodo emitiu a mensagem recebida - Publisher deste topico
+            #               1.2) Verifica is_subscriber   
+            #                   A)  
+            #                   1.3) Verifica o ID da mensagem
+            #                       A) ID da mensagem recebida é igual da ultima mensagem recebido, do topico - Mensagem repassada atrassada 
+            #                       B) ID da mensagem recebida não é diferente da ultima mensagem recebida - Mensagem nova - aceitar 
+            #            B) Este nodo está inscrito no topico - Subscriber deste topico
+            #                1.4) Verifica o ID da mensagem
+            #                    A) ID da mensagem recebida é igual da ultima mensagem recebido, do topico - Mensagem repassada atrassada 
+            #                    B) ID da mensagem recebida não é diferente da ultima mensagem recebida - Mensagem nova - aceitar 
+            #   B) topic NÃO está em _topics
+            #            2.1) verificar se topic está em _topic_last_id
+            #                A) topic está em _topic_last_id
+            #                    2.2) Verificar data_id em _topic_last_id
+            #                        A) ID da mensagem recebida é igual ao ultimo ID da mensagem recebida, do topico - NÃO repassa mensagem
+            #                        B) ID da mensagem recebida é diferente do ID da ultima mensagem recebida - repassa mensagem
+            #                B) topic NÂO está em _topic_last_id
+            #                        A) cria topic em _topic_last_id e repassa mensagem
+
+            #   Verificação 1)
+            if topic in self._topics:
+                #	Bloco A) topic está em _topics
+                #   Verificação 1.1)
+                if self._topics[topic].is_publisher:
+                    #	Bloco A)
+                    #   1.2)
+                    if self._topics[topic].is_subscriber:
+                        #   Bloco A)
+                        #   Verificação 1.3)
+                        if data_object.data_id == self._topics[topic].latest_id:
+                            #   Bloco A)
+                            continue
+                        else:
+                            #   Bloco B)
+                            self._topics[topic].t_stamp = ticks_ms() # timestamp de quando recebe, para subscribers
+                            self._topics[topic].latest_id = data_object.data_id
+                            self._topics[topic].latest_data = data_object 
+                            #Callback passada na inicialização da MeshNet
+                            self.on_news(self, data_object.data_id, data_object.topic, data_object.publisher_node_name, data_object.payload, data_object.sender_node_name ) #callback 
+                
                     else:
-                        #B)
-                        self._topic_last_id[topic] = data.data_id #atualiza o ultimo id
-                        MeshNet.en.send(_BCAST, MeshNet._pack_msg(data))
+                        #   Bloco )
+                        continue
                 else:
-                    #2.2)
-                    self._topic_last_id[topic] = data.data_id #cria topico e ultimo id
-                    MeshNet.en.send(_BCAST, MeshNet._pack_msg(data))
+                    #	Bloco B)
+                    #   Verificação 1.4)
+                    if data_object.data_id == self._topics[topic].latest_id:
+                        #   Bloco A)
+                        continue
+                    else:
+                        #   Bloco B)
+                        self._topics[topic].t_stamp = ticks_ms() # timestamp de quando recebe, para subscribers
+                        self._topics[topic].latest_id = data_object.data_id
+                        self._topics[topic].latest_data = data_object 
+                        #Callback passada na inicialização da MeshNet
+                        self.on_news(self, data_object.data_id, data_object.topic, data_object.publisher_node_name, data_object.payload, data_object.sender_node_name ) #callback 
+            
+            #	Bloco B) topico NÃO está em _topics
+            else:
+                #   Verificação 2.1)
+                if topic in self._topic_last_id:
+                    #   Bloco A) 
+                    #   Verificação 2.2
+                    if data_object.data_id == self._topic_last_id[topic]:
+                        #   Bloco A)
+                        continue
+
+                    else:
+                        #   Bloco B)
+                        self._topic_last_id[topic] = data_object.data_id #atualiza o ultimo id
+                        data_object.sender_node_name = self._node_name
+                        en.send(_BCAST, MeshNet._pack_msg(data_object))
+                
+                else:
+                    #   2.1 Bloco B)
+                    data_object.sender_node_name = self._node_name
+                    self._topic_last_id[topic] = data_object.data_id #cria topico em _topic_last_id
+                    en.send(_BCAST, MeshNet._pack_msg(data_object))
 
                 
-                     
+                    
     #Inscreve no topic
     #topic: topic a ser inscrito
     @classmethod
     def subscribe(cls, topic):
-        if not topic in cls._topic: # novo inscrito
+        if not topic in cls._topics: # novo inscrito
             ms = MessageSetting()
+            ms.is_subscriber = True
             ms.is_publisher = False
-            cls._topic[topic] = ms
-            print('subscribed to {}'.format(topic))
+            cls._topics[topic] = ms
+            print('Inscrito em {}'.format(topic))
 
         else:
-            print("Topico já inscrito")    
-
+            cls._topics[topic].is_subscriber = True
+            print("Topico já inscrito ou este nodo publica para este topico")
+    
+    
+    #Cancela a inscricao em um topic
+    #topic: topico a ser cancelado
+    @classmethod
+    def unsubscribe(cls, topic):
+        if topic in cls._topics:
+            del cls._topics[topic]
+            print("Inscrição cancelada em topico {}".format(topic))
+        else:
+            print("Topico nao existe")
+            
+    
     # metodo para enviar nova ou uma atualizacao sobre um topico
     # topic: topico da mensagem
     # payload: dados a serem enviados
     @classmethod
     def post(cls, topic, payload):
-        data = Data(topic, cls._node_name, payload)
-        print('post to {} {}'.format(topic,payload))
+        data = Data(topic=topic, publisher_node_name=cls._node_name, payload=payload)
+        data.sender_node_name = data.publisher_node_name
 
-        #Nova publicação para alguma topico
-        if not topic in cls._topic: 
+        #Nova publicação para algum topico, necessario atualizar o valor de latest_id, de MessageSetting.
+        if not topic in cls._topics: 
             ms = MessageSetting()
             ms.t_stamp = ticks_ms() #timestamp da ultima publicação, publisher 
+            ms.latest_id = data.data_id
             ms.latest_data = data
-            cls._topic[topic] = ms
+            
+            #False por default
+            #ms.is_subscriber = False
+            
+            cls._topics[topic] = ms
+            
+            
         
-        #Atualização sobre um topico
+        #Atualização sobre um topico, incrementa id, e substitui id no objeto data
         else:
-            cls._topic[topic].latest_id += 1
-            data.data_id = cls._topic[topic].latest_id
-            cls._topic[topic].t_stamp = ticks_ms() #timestamp da ultima publicação, publisher
-            cls._topic[topic].latest_data = data
+            cls._topics[topic].latest_id += 1
+            data.data_id = cls._topics[topic].latest_id
+            cls._topics[topic].t_stamp = ticks_ms() #timestamp da ultima publicação, publisher
+            cls._topics[topic].latest_data = data
 
         cls.en.send(_BCAST, cls._pack_msg(data))
+        #print(f'Post feito para topic: {data.topic} - data_id: {data.data_id}, sender_node_name: {data.sender_node_name}, payload: {data.payload}')
 
 
         #Talvez acrescentar uma forma do subscriber requisitar uma atualização do publisher? ou metodo para verificar ultimo dado recebido?
         #data_id = 0, pode ser usado como handshake inicial, para verificar se existe algum inscrito dado alguma topico e registrar o topico nos nodos de rota
         #Impoe restricoes sobre o publisher? como somente 1 publisher pode publicar nesse topico
+        
+
+
+
+
+
+
+
+
+
