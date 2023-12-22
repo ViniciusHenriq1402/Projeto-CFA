@@ -51,20 +51,25 @@ Conforme mencionado na introdução, iremos explorar as amplas oportunidades de 
 
 ## Materiais
 
-    - 3 ESP32: Instalados com a versão 1.21.0 do Micropython.
-    - 3 Placas sensíveis ao toque.
-    - 3 Jumpers Femea/Femea: Ligando os ESPs às placas.
-    - 3 Cabos USB micro-B.
-    - 2 ou 3 Recarregadores: usados para fornecer energia ao ESPs
-    - Thonny IDE
+- 3 ESP32: Instalados com a versão 1.21.0 do Micropython.
+- 3 Placas sensíveis ao toque.
+- 3 Jumpers Femea/Femea: Ligando os ESPs às placas.
+- 3 Cabos USB micro-B.
+- 2 ou 3 Recarregadores: usados para fornecer energia ao ESPs
+- Thonny IDE.
 
 ## Pinos usados
 
-    - Pino GPIO14: oferece Capacitive Touch. [Link](https://randomnerdtutorials.com/esp32-pinout-reference-gpios/) usados para referência dos Pinos
+- Pino GPIO14: oferece Capacitive Touch. [Link](https://randomnerdtutorials.com/esp32-pinout-reference-gpios/) usados para referência dos Pinos
 
 ## Montagem 
 
-Conforme a Imagem, ligue os jumpers nas placas, e a outra ponta ao pino GPIO14 do ESP, faça isso para os outros ESPs.
+![Imagem 1](montagem1.jpg)
+
+Conforme a Imagem 1, ligue os jumpers nas placas, e a outra ponta ao pino GPIO14 do ESP, faça isso para os outros ESPs.
+Com isso, conecte os USB micro-B aos ESPs e a ponta USB para cada um dos recarregadores. A cada um deverá esta como a Imagem 2.
+
+![Imagem 2](montagem2.jpg)
 
 ## Como Transferir os arquivos para o ESP32
 
